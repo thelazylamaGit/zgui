@@ -82,7 +82,8 @@ objc2.workspace = true
 objc2-app-kit.workspace = true
 objc2-foundation.workspace = true
 
-# The font smoothing settings, which say how the system draws its own text.
+# The font smoothing settings, which say how the system draws its own text, and the timer that
+# keeps frames coming through a modal move or size loop.
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys.workspace = true
 

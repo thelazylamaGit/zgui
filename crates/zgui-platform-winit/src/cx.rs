@@ -207,6 +207,8 @@ impl PlatformCx for WinitCx<'_> {
             .create_window(window_attributes(attributes, self.shared.scheme.get()))
             .map_err(|error| PlatformError::SurfaceCreation(error.to_string()))?;
         let window = Arc::new(window);
+        #[cfg(target_os = "windows")]
+        crate::modal::keep_drawing(&window);
 
         let id = SurfaceId::new(self.shared.next.get());
         self.shared.next.set(self.shared.next.get() + 1);

@@ -83,6 +83,8 @@ pub mod cx;
 pub mod input;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "windows")]
+mod modal;
 pub mod monitor;
 pub mod park;
 mod subpixel;
