@@ -22,11 +22,11 @@ pub const BACKENDS_VARIABLE: &str = "ZGUI_BACKENDS";
 
 /// The backends enumerated when nothing restricts them.
 ///
-/// Each platform has one primary — Metal on Apple, DX12 on Windows, WebGPU in a browser, Vulkan
-/// elsewhere — and GL rides along as the fallback for a machine whose primary has no working
-/// driver. In a browser GL is WebGL 2. wgpu reaches
-/// GL through EGL, which Apple platforms do not ship, so the Apple set is Metal alone. GL is
-/// enumerated only after the primary has failed — see [`tiers`].
+/// Each platform has one primary — Metal on Apple, WebGPU in a browser, Vulkan elsewhere — and GL
+/// rides along as the fallback for a machine whose primary has no working driver. Windows also has
+/// DX12, tried after Vulkan. In a browser GL is WebGL 2. wgpu reaches GL through EGL, which Apple
+/// platforms do not ship, so the Apple set is Metal alone. Each fallback is enumerated only after
+/// the backends before it failed — see [`tiers`].
 pub fn default_backends() -> wgpu::Backends {
     #[cfg(target_vendor = "apple")]
     {
@@ -34,7 +34,7 @@ pub fn default_backends() -> wgpu::Backends {
     }
     #[cfg(target_os = "windows")]
     {
-        wgpu::Backends::DX12 | wgpu::Backends::GL
+        wgpu::Backends::VULKAN | wgpu::Backends::DX12 | wgpu::Backends::GL
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -70,9 +70,16 @@ pub fn gl_enumerations() -> u64 {
 /// A request naming one backend yields one tier, which is what makes [`BACKENDS_VARIABLE`] mean
 /// exactly what it says. The empty request yields no tiers at all.
 pub fn tiers(backends: wgpu::Backends) -> Vec<wgpu::Backends> {
-    let primary = backends - wgpu::Backends::GL;
+    // Vulkan is tried on its own before another native backend. On Windows, wgpu's DX12 backend
+    // compiles every shader with FXC at run time, and Vulkan drivers keep compiled pipelines between
+    // runs. Measured on one Windows machine: building the shared Vello path renderer took about
+    // 1.45 s on DX12, against 7 ms on Vulkan with a warm driver cache (0.8 s cold). So DX12 is the
+    // fallback for machines without a working Vulkan driver.
+    let native = backends - wgpu::Backends::GL;
+    let vulkan = native & wgpu::Backends::VULKAN;
+    let other = native - wgpu::Backends::VULKAN;
     let fallback = backends & wgpu::Backends::GL;
-    [primary, fallback]
+    [vulkan, other, fallback]
         .into_iter()
         .filter(|tier| !tier.is_empty())
         .collect()
@@ -317,6 +324,19 @@ mod tests {
             vec![wgpu::Backends::METAL, wgpu::Backends::GL],
             "every native backend outranks the fallback, whatever the platform"
         );
+    }
+
+    #[test]
+    fn vulkan_is_tried_before_dx12() {
+        assert_eq!(
+            tiers(wgpu::Backends::VULKAN | wgpu::Backends::DX12 | wgpu::Backends::GL),
+            vec![
+                wgpu::Backends::VULKAN,
+                wgpu::Backends::DX12,
+                wgpu::Backends::GL
+            ],
+        );
+        assert_eq!(tiers(wgpu::Backends::DX12), vec![wgpu::Backends::DX12]);
     }
 
     #[test]
