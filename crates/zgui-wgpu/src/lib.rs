@@ -56,6 +56,9 @@ use zgui_runtime::wake::RuntimeWaker;
 use zgui_scene::ExternalTextureId;
 use zgui_vocab::{PropKey, PropValue, Timestamp};
 
+/// The re-exported vector renderer, so a scene drawn with
+/// [`SurfaceRenderCx::render_vello`] is the type zgui's own renderer takes.
+pub use zgui_render_vector_vello::vello;
 /// The re-exported graphics API, so a producer names the same wgpu the renderer links.
 pub use zgui_render_wgpu::wgpu;
 
@@ -388,6 +391,8 @@ pub struct SurfaceRenderCx<'a> {
     /// Whether another frame was asked for; written through
     /// [`request_animation_frame`](SurfaceRenderCx::request_animation_frame).
     animate: &'a mut bool,
+    /// The device and what zgui keeps beside it, for [`render_vello`](Self::render_vello).
+    gpu: &'a Arc<Gpu>,
 }
 
 impl SurfaceRenderCx<'_> {
@@ -395,6 +400,81 @@ impl SurfaceRenderCx<'_> {
     /// renderer that stops calling it stops being called until a [`SurfaceInvalidator`] asks.
     pub fn request_animation_frame(&mut self) {
         *self.animate = true;
+    }
+
+    /// Draws `scene` over the whole texture, on `base_color`, with the Vello renderer the window
+    /// draws its own vector content with.
+    ///
+    /// The renderer is shared by everything on this device, so its pipelines are compiled once
+    /// and its buffers held once, however many surfaces and windows draw with it. It draws with
+    /// analytic area antialiasing.
+    ///
+    /// The texture has to be `Rgba8Unorm`, the default [`SurfaceRenderer::format`], and the
+    /// renderer has to ask for `STORAGE_BINDING` through [`SurfaceRenderer::usage`], because
+    /// Vello writes it from a compute pass.
+    ///
+    /// ```no_run
+    /// use zgui_wgpu::{SurfaceRenderCx, SurfaceRenderer, vello, wgpu};
+    ///
+    /// struct Drawing {
+    ///     scene: vello::Scene,
+    /// }
+    ///
+    /// impl SurfaceRenderer for Drawing {
+    ///     fn usage(&self) -> wgpu::TextureUsages {
+    ///         wgpu::TextureUsages::STORAGE_BINDING
+    ///     }
+    ///
+    ///     fn render(&mut self, cx: &mut SurfaceRenderCx<'_>) {
+    ///         if let Err(error) = cx.render_vello(&self.scene, vello::peniko::Color::WHITE) {
+    ///             eprintln!("drawing without Vello: {error}");
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// When the device cannot run Vello, which needs compute shaders and writable storage
+    /// textures, or when Vello fails to draw the scene.
+    ///
+    /// # Panics
+    ///
+    /// If the texture isn't `Rgba8Unorm` or wasn't given `STORAGE_BINDING`.
+    #[track_caller]
+    pub fn render_vello(
+        &self,
+        scene: &vello::Scene,
+        base_color: vello::peniko::Color,
+    ) -> Result<(), vello::Error> {
+        assert_eq!(
+            self.texture.format(),
+            wgpu::TextureFormat::Rgba8Unorm,
+            "Vello draws into an Rgba8Unorm texture; keep SurfaceRenderer::format's default",
+        );
+        assert!(
+            self.texture
+                .usage()
+                .contains(wgpu::TextureUsages::STORAGE_BINDING),
+            "Vello writes the texture from a compute pass: return STORAGE_BINDING from SurfaceRenderer::usage",
+        );
+        let shared = zgui_render_vector_vello::device::for_gpu(self.gpu)?;
+        // Measured the way the window's own first rasterisation is, so the renderer's fixed
+        // memory is attributed to it whichever draws first.
+        shared.measuring(self.gpu, || {
+            shared.lock().render_to_texture(
+                self.device,
+                self.queue,
+                scene,
+                self.view,
+                &vello::RenderParams {
+                    base_color,
+                    width: self.size.width,
+                    height: self.size.height,
+                    antialiasing_method: vello::AaConfig::Area,
+                },
+            )
+        })
     }
 }
 
@@ -1010,6 +1090,7 @@ impl WgpuSurfaces {
                         scale: cx.scale,
                         timestamp: cx.timestamp,
                         animate,
+                        gpu: &gpu,
                     };
                     producer.render(&mut cx_render);
                     *drawn = true;

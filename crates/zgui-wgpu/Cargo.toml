@@ -26,6 +26,8 @@ zgui-paint = { path = "../zgui-paint", version = "0.1.0" }
 zgui-reactive = { path = "../zgui-reactive", version = "0.1.0" }
 zgui-render = { path = "../zgui-render", version = "0.1.0" }
 zgui-render-wgpu = { path = "../zgui-render-wgpu", version = "0.1.0" }
+# The path renderer each device already has, which a surface renderer can draw a scene with.
+zgui-render-vector-vello = { path = "../zgui-render-vector-vello", version = "0.1.0" }
 zgui-runtime = { path = "../zgui-runtime", version = "0.1.0" }
 zgui-scene = { path = "../zgui-scene", version = "0.1.0" }
 zgui-view = { path = "../zgui-view", version = "0.1.0" }

@@ -6633,6 +6633,7 @@ dependencies = [
  "zgui-platform-headless",
  "zgui-reactive",
  "zgui-render",
+ "zgui-render-vector-vello",
  "zgui-render-wgpu",
  "zgui-runtime",
  "zgui-scene",
